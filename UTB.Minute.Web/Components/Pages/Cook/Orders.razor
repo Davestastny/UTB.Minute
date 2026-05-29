@@ -1,0 +1,232 @@
+@page "/cook/orders"
+@attribute [Authorize(Roles = "cook,admin")]
+@inject IHttpClientFactory HttpClientFactory
+@inject SseListenerService SseListener
+@inject UTB.Minute.Web.Services.TokenProvider TokenProvider
+@implements IDisposable
+
+<h3>Kitchen Orders</h3>
+
+@if (isUnauthorized)
+{
+    <div class="card border-warning mb-4 shadow-sm">
+        <div class="card-header bg-warning text-dark">
+            <h5 class="mb-0"><i class="bi bi-shield-lock-fill"></i> Diagnostika přihlášení (401 Unauthorized)</h5>
+        </div>
+        <div class="card-body">
+            <p>API odmítlo požadavek jako neautorizovaný. Zde jsou podrobné informace pro vyřešení:</p>
+            <table class="table table-sm table-bordered">
+                <tbody>
+                    <tr>
+                        <td><strong>Je token přítomen v TokenProvideru?</strong></td>
+                        <td>
+                            @if (tokenProviderHasToken)
+                            {
+                                <span class="badge bg-success">ANO</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-danger">NE (Token je prázdný/null)</span>
+                            }
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>Délka přístupového tokenu:</strong></td>
+                        <td><code>@tokenLength znaků</code></td>
+                    </tr>
+                </tbody>
+            </table>
+            
+            <div class="alert alert-info small mt-2">
+                <i class="bi bi-info-circle-fill"></i> <strong>Jak to vyřešit:</strong> Klikněte na červené tlačítko níže. Tím Keycloak zneplatní starou relaci a vynutí vytvoření nové platné přihlašovací cookie s uloženými tokeny.
+            </div>
+            
+            <a href="/logout" class="btn btn-danger mt-2">
+                <i class="bi bi-box-arrow-right"></i> Odhlásit se a přihlásit znovu
+            </a>
+        </div>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        @errorMessage
+        <button type="button" class="btn-close" @onclick="() => errorMessage = null"></button>
+    </div>
+}
+
+@if (orders == null || menuItems == null)
+{
+    <p><em>Loading active orders...</em></p>
+}
+else if (activeOrders.Count == 0)
+{
+    <div class="alert alert-success">All caught up! No active orders in the kitchen.</div>
+}
+else
+{
+    <table class="table table-bordered table-hover align-middle">
+        <thead class="table-dark">
+            <tr>
+                <th>Order #</th>
+                <th>Time</th>
+                <th>Student</th>
+                <th>Dish</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var order in activeOrders.OrderBy(o => o.Status).ThenBy(o => o.OrderedAt))
+            {
+                var menuInfo = menuItems.FirstOrDefault(m => m.Id == order.MenuItemId);
+                var dishName = menuInfo?.DishName ?? "Unknown Dish";
+
+                <tr class="@GetRowClass(order.Status)">
+                    <td><strong>@order.Id</strong></td>
+                    <td>@order.OrderedAt.ToLocalTime().ToString("t")</td>
+                    <td>@order.StudentId</td>
+                    <td><span class="fw-bold">@dishName</span></td>
+                    <td>
+                        <span class="badge @GetStatusBadgeClass(order.Status)">
+                            @GetStatusText(order.Status)
+                        </span>
+                    </td>
+                    <td>
+                        @if (order.Status == 0) // Preparing
+                        {
+                            <button class="btn btn-success btn-sm me-2" @onclick="() => UpdateStatus(order.Id, 1)">Mark Ready</button>
+                            <button class="btn btn-outline-danger btn-sm" @onclick="() => UpdateStatus(order.Id, 2)">Cancel</button>
+                        }
+                        else if (order.Status == 1) // Ready
+                        {
+                            <button class="btn btn-primary btn-sm" @onclick="() => UpdateStatus(order.Id, 3)">Complete (Handed over)</button>
+                        }
+                        else if (order.Status == 2) // Cancelled
+                        {
+                            <span class="text-muted fst-italic">No actions</span>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<OrderDto>? orders;
+    private MenuItemDto[]? menuItems;
+    private string? errorMessage;
+    private HttpClient _client = default!;
+
+    private bool isUnauthorized = false;
+    private bool tokenProviderHasToken = false;
+    private int tokenLength = 0;
+
+    private List<OrderDto> activeOrders => orders?.Where(o => o.Status != 3).ToList() ?? new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _client = HttpClientFactory.CreateClient("webapi");
+        await LoadData();
+        
+        SseListener.OnEventReceived += HandleSseEvent;
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            var allOrders = await _client.GetFromJsonAsync<OrderDto[]>("/orders");
+            if (allOrders != null)
+            {
+                orders = allOrders.ToList();
+            }
+
+            menuItems = await _client.GetFromJsonAsync<MenuItemDto[]>("/menu-items");
+            isUnauthorized = false;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            isUnauthorized = true;
+            tokenProviderHasToken = !string.IsNullOrEmpty(TokenProvider.AccessToken);
+            tokenLength = TokenProvider.AccessToken?.Length ?? 0;
+            orders = new();
+            menuItems = Array.Empty<MenuItemDto>();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Chyba při načítání dat: {ex.Message}";
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task UpdateStatus(int orderId, int newStatus)
+    {
+        var dto = new UpdateOrderStatusDto(newStatus);
+        var response = await _client.PatchAsJsonAsync($"/orders/{orderId}/status", dto);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var err = await response.Content.ReadAsStringAsync();
+            errorMessage = $"Failed to update order status: {err}";
+        }
+        else
+        {
+            errorMessage = null;
+            // The SSE event will update the UI automatically, but we can optimistically update
+            var updated = await response.Content.ReadFromJsonAsync<OrderDto>();
+            if (updated != null && orders != null)
+            {
+                var existing = orders.FirstOrDefault(o => o.Id == updated.Id);
+                if (existing != null)
+                {
+                    orders.Remove(existing);
+                }
+                
+                if (updated.Status != 3)
+                {
+                    orders.Add(updated);
+                }
+            }
+        }
+    }
+
+    private void HandleSseEvent(string eventType, System.Text.Json.JsonDocument data)
+    {
+        if (eventType == "order-created" || eventType == "order-updated")
+        {
+            _ = InvokeAsync(LoadData);
+        }
+    }
+
+    private string GetStatusText(int status) => status switch
+    {
+        0 => "Preparing",
+        1 => "Ready",
+        2 => "Cancelled",
+        _ => "Unknown"
+    };
+
+    private string GetStatusBadgeClass(int status) => status switch
+    {
+        0 => "bg-warning text-dark",
+        1 => "bg-success",
+        2 => "bg-danger",
+        _ => "bg-secondary"
+    };
+
+    private string GetRowClass(int status) => status switch
+    {
+        0 => "table-warning",
+        1 => "table-success",
+        2 => "table-danger text-muted",
+        _ => ""
+    };
+
+    public void Dispose()
+    {
+        SseListener.OnEventReceived -= HandleSseEvent;
+    }
+}

@@ -1,0 +1,90 @@
+@page "/dishes/edit/{Id:int}"
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Navigation
+
+<h3>Edit Dish</h3>
+
+@if (dishModel == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <div class="row">
+        <div class="col-md-6">
+            <EditForm Model="dishModel" OnValidSubmit="HandleValidSubmit">
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+
+                <div class="mb-3">
+                    <label for="name" class="form-label">Name</label>
+                    <InputText id="name" class="form-control" @bind-Value="dishModel.Name" />
+                </div>
+
+                <div class="mb-3">
+                    <label for="description" class="form-label">Description</label>
+                    <InputTextArea id="description" class="form-control" @bind-Value="dishModel.Description" />
+                </div>
+
+                <div class="mb-3">
+                    <label for="price" class="form-label">Price</label>
+                    <InputNumber id="price" class="form-control" @bind-Value="dishModel.Price" />
+                </div>
+
+                <div class="mb-3 form-check">
+                    <InputCheckbox id="isActive" class="form-check-input" @bind-Value="dishModel.IsActive" />
+                    <label class="form-check-label" for="isActive">Is Active</label>
+                </div>
+
+                <button type="submit" class="btn btn-primary">Save Changes</button>
+                <a href="/dishes" class="btn btn-secondary">Cancel</a>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private EditDishModel? dishModel;
+    private HttpClient _client = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _client = HttpClientFactory.CreateClient("webapi");
+        var dish = await _client.GetFromJsonAsync<DishDto>($"/dishes/{Id}");
+        
+        if (dish != null)
+        {
+            dishModel = new EditDishModel
+            {
+                Name = dish.Name,
+                Description = dish.Description,
+                Price = dish.Price,
+                IsActive = dish.IsActive
+            };
+        }
+    }
+
+    private async Task HandleValidSubmit()
+    {
+        if (dishModel == null) return;
+
+        var dto = new UpdateDishDto(dishModel.Name, dishModel.Description, dishModel.Price, dishModel.IsActive);
+        var response = await _client.PutAsJsonAsync($"/dishes/{Id}", dto);
+
+        if (response.IsSuccessStatusCode)
+        {
+            Navigation.NavigateTo("/dishes");
+        }
+    }
+
+    public class EditDishModel
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public decimal Price { get; set; }
+        public bool IsActive { get; set; }
+    }
+}

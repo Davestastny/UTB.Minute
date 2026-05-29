@@ -1,0 +1,78 @@
+@page "/dishes"
+@inject IHttpClientFactory HttpClientFactory
+
+<h3>Dishes</h3>
+
+<div class="mb-3">
+    <a href="/dishes/create" class="btn btn-primary">Create New Dish</a>
+</div>
+
+@if (dishes == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <table class="table table-striped table-hover">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Description</th>
+                <th>Price</th>
+                <th>Active</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var dish in dishes)
+            {
+                <tr>
+                    <td>@dish.Id</td>
+                    <td>@dish.Name</td>
+                    <td>@dish.Description</td>
+                    <td>@dish.Price.ToString("C")</td>
+                    <td>
+                        @if (dish.IsActive)
+                        {
+                            <span class="badge bg-success">Yes</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-danger">No</span>
+                        }
+                    </td>
+                    <td>
+                        <a href="/dishes/edit/@dish.Id" class="btn btn-sm btn-outline-primary">Edit</a>
+                        @if (dish.IsActive)
+                        {
+                            <button class="btn btn-sm btn-outline-warning" @onclick="() => DeactivateDish(dish.Id)">Deactivate</button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private DishDto[]? dishes;
+    private HttpClient _client = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _client = HttpClientFactory.CreateClient("webapi");
+        await LoadDishes();
+    }
+
+    private async Task LoadDishes()
+    {
+        dishes = await _client.GetFromJsonAsync<DishDto[]>("/dishes");
+    }
+
+    private async Task DeactivateDish(int id)
+    {
+        await _client.PatchAsync($"/dishes/{id}/deactivate", null);
+        await LoadDishes();
+    }
+}

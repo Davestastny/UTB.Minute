@@ -1,0 +1,103 @@
+{
+  "id": "minute",
+  "realm": "minute",
+  "enabled": true,
+  "clients": [
+    {
+      "clientId": "admin-client",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "admin-secret",
+      "redirectUris": [ "*" ],
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "userinfo.token.claim": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "canteen-client",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "canteen-secret",
+      "redirectUris": [ "*" ],
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "userinfo.token.claim": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    }
+  ],
+  "roles": {
+    "realm": [
+      { "name": "admin" },
+      { "name": "cook" },
+      { "name": "student" }
+    ]
+  },
+  "users": [
+    {
+      "username": "admin",
+      "enabled": true,
+      "email": "admin@utb.cz",
+      "emailVerified": true,
+      "firstName": "Admin",
+      "lastName": "User",
+      "requiredActions": [],
+      "credentials": [ { "type": "password", "value": "admin123", "temporary": false } ],
+      "realmRoles": [ "admin" ]
+    },
+    {
+      "username": "cook",
+      "enabled": true,
+      "email": "cook@utb.cz",
+      "emailVerified": true,
+      "firstName": "Cook",
+      "lastName": "User",
+      "requiredActions": [],
+      "credentials": [ { "type": "password", "value": "cook123", "temporary": false } ],
+      "realmRoles": [ "cook" ]
+    },
+    {
+      "username": "student",
+      "enabled": true,
+      "email": "student@utb.cz",
+      "emailVerified": true,
+      "firstName": "Student",
+      "lastName": "User",
+      "requiredActions": [],
+      "credentials": [ { "type": "password", "value": "student123", "temporary": false } ],
+      "realmRoles": [ "student" ]
+    }
+  ]
+}

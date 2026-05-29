@@ -1,0 +1,138 @@
+@page "/student/orders"
+@inject IHttpClientFactory HttpClientFactory
+@inject SseListenerService SseListener
+@implements IDisposable
+
+<h3>My Orders</h3>
+
+@if (orders == null || menuItems == null)
+{
+    <p><em>Loading your orders...</em></p>
+}
+else if (myOrders.Count == 0)
+{
+    <div class="alert alert-info">You have no active orders.</div>
+}
+else
+{
+    <div class="row g-3">
+        @foreach (var order in myOrders.OrderByDescending(o => o.OrderedAt))
+        {
+            var menuInfo = menuItems.FirstOrDefault(m => m.Id == order.MenuItemId);
+            var dishName = menuInfo?.DishName ?? "Unknown Dish";
+            var dishPrice = menuInfo?.DishPrice ?? 0;
+
+            <div class="col-md-6">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h5 class="card-title mb-0">Order #@order.Id</h5>
+                            <span class="badge @GetStatusBadgeClass(order.Status) fs-6">
+                                @GetStatusText(order.Status)
+                            </span>
+                        </div>
+                        <p class="card-text fw-bold">@dishName</p>
+                        <p class="card-text text-muted mb-1"><small>Ordered at: @order.OrderedAt.ToLocalTime().ToString("t")</small></p>
+                        <p class="card-text">Price: @dishPrice.ToString("C")</p>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<OrderDto>? orders;
+    private MenuItemDto[]? menuItems;
+    private HttpClient _client = default!;
+
+    [SupplyParameterFromQuery(Name = "studentId")]
+    private string? StudentIdParam { get; set; }
+
+    private string studentId = string.Empty;
+    private List<OrderDto> myOrders => orders?.Where(o => o.StudentId == studentId).ToList() ?? new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        studentId = StudentIdParam ?? "unknown";
+
+        _client = HttpClientFactory.CreateClient("webapi");
+        await LoadData();
+        
+        SseListener.OnEventReceived += HandleSseEvent;
+    }
+
+    private async Task LoadData()
+    {
+        // Load active orders
+        var allOrders = await _client.GetFromJsonAsync<OrderDto[]>("/orders");
+        if (allOrders != null)
+        {
+            orders = allOrders.ToList();
+        }
+
+        // Load all menu items to get names
+        menuItems = await _client.GetFromJsonAsync<MenuItemDto[]>("/menu-items");
+        
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleSseEvent(string eventType, System.Text.Json.JsonDocument data)
+    {
+        if (eventType == "order-created" || eventType == "order-updated")
+        {
+            try
+            {
+                var updatedOrder = System.Text.Json.JsonSerializer.Deserialize<OrderDto>(data, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (updatedOrder != null && orders != null)
+                {
+                    // If it's my order, update the list
+                    if (updatedOrder.StudentId == studentId)
+                    {
+                        var existing = orders.FirstOrDefault(o => o.Id == updatedOrder.Id);
+                        if (existing != null)
+                        {
+                            orders.Remove(existing);
+                        }
+                        
+                        // If it's not completed, add it back
+                        if (updatedOrder.Status != 3) // 3 = Completed
+                        {
+                            orders.Add(updatedOrder);
+                        }
+                        
+                        _ = InvokeAsync(StateHasChanged);
+                    }
+                }
+            }
+            catch
+            {
+                // Fallback: reload everything
+                _ = InvokeAsync(LoadData);
+            }
+        }
+    }
+
+    private string GetStatusText(int status) => status switch
+    {
+        0 => "Preparing",
+        1 => "Ready for Pickup",
+        2 => "Cancelled",
+        3 => "Completed",
+        _ => "Unknown"
+    };
+
+    private string GetStatusBadgeClass(int status) => status switch
+    {
+        0 => "bg-warning text-dark",
+        1 => "bg-success",
+        2 => "bg-danger",
+        3 => "bg-secondary",
+        _ => "bg-secondary"
+    };
+
+    public void Dispose()
+    {
+        SseListener.OnEventReceived -= HandleSseEvent;
+    }
+}

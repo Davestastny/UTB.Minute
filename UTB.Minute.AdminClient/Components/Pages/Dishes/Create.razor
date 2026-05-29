@@ -1,0 +1,60 @@
+@page "/dishes/create"
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Navigation
+
+<h3>Create Dish</h3>
+
+<div class="row">
+    <div class="col-md-6">
+        <EditForm Model="dishModel" OnValidSubmit="HandleValidSubmit">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+
+            <div class="mb-3">
+                <label for="name" class="form-label">Name</label>
+                <InputText id="name" class="form-control" @bind-Value="dishModel.Name" />
+            </div>
+
+            <div class="mb-3">
+                <label for="description" class="form-label">Description</label>
+                <InputTextArea id="description" class="form-control" @bind-Value="dishModel.Description" />
+            </div>
+
+            <div class="mb-3">
+                <label for="price" class="form-label">Price</label>
+                <InputNumber id="price" class="form-control" @bind-Value="dishModel.Price" />
+            </div>
+
+            <button type="submit" class="btn btn-primary">Create</button>
+            <a href="/dishes" class="btn btn-secondary">Cancel</a>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    private CreateDishModel dishModel = new();
+    private HttpClient _client = default!;
+
+    protected override void OnInitialized()
+    {
+        _client = HttpClientFactory.CreateClient("webapi");
+    }
+
+    private async Task HandleValidSubmit()
+    {
+        var dto = new CreateDishDto(dishModel.Name, dishModel.Description, dishModel.Price);
+        var response = await _client.PostAsJsonAsync("/dishes", dto);
+
+        if (response.IsSuccessStatusCode)
+        {
+            Navigation.NavigateTo("/dishes");
+        }
+    }
+
+    public class CreateDishModel
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public decimal Price { get; set; }
+    }
+}

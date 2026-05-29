@@ -1,0 +1,77 @@
+@page "/menu/create"
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Navigation
+
+<h3>Create Menu Item</h3>
+
+@if (dishes == null)
+{
+    <p><em>Loading active dishes...</em></p>
+}
+else
+{
+    <div class="row">
+        <div class="col-md-6">
+            <EditForm Model="menuModel" OnValidSubmit="HandleValidSubmit">
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+
+                <div class="mb-3">
+                    <label for="dishId" class="form-label">Dish</label>
+                    <InputSelect id="dishId" class="form-select" @bind-Value="menuModel.DishId">
+                        <option value="0">-- Select a Dish --</option>
+                        @foreach (var dish in dishes)
+                        {
+                            <option value="@dish.Id">@dish.Name (@dish.Price.ToString("C"))</option>
+                        }
+                    </InputSelect>
+                </div>
+
+                <div class="mb-3">
+                    <label for="menuDate" class="form-label">Date</label>
+                    <InputDate id="menuDate" class="form-control" @bind-Value="menuModel.MenuDate" />
+                </div>
+
+                <div class="mb-3">
+                    <label for="portions" class="form-label">Available Portions</label>
+                    <InputNumber id="portions" class="form-control" @bind-Value="menuModel.AvailablePortions" />
+                </div>
+
+                <button type="submit" class="btn btn-primary" disabled="@(menuModel.DishId == 0)">Create</button>
+                <a href="/menu" class="btn btn-secondary">Cancel</a>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@code {
+    private CreateMenuModel menuModel = new() { MenuDate = DateTime.Today };
+    private DishDto[]? dishes;
+    private HttpClient _client = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _client = HttpClientFactory.CreateClient("webapi");
+        var allDishes = await _client.GetFromJsonAsync<DishDto[]>("/dishes");
+        // Only allow selecting active dishes
+        dishes = allDishes?.Where(d => d.IsActive).ToArray();
+    }
+
+    private async Task HandleValidSubmit()
+    {
+        var dto = new CreateMenuItemDto(menuModel.DishId, menuModel.MenuDate, menuModel.AvailablePortions);
+        var response = await _client.PostAsJsonAsync("/menu-items", dto);
+
+        if (response.IsSuccessStatusCode)
+        {
+            Navigation.NavigateTo("/menu");
+        }
+    }
+
+    public class CreateMenuModel
+    {
+        public int DishId { get; set; }
+        public DateTime MenuDate { get; set; }
+        public int AvailablePortions { get; set; }
+    }
+}

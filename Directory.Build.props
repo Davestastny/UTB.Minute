@@ -1,0 +1,5 @@
+<Project>
+  <PropertyGroup>
+    <AspireHostingSDKVersion>9.3.1</AspireHostingSDKVersion>
+  </PropertyGroup>
+</Project>

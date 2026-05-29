@@ -1,0 +1,115 @@
+@page "/"
+@page "/student/menu"
+@inject IHttpClientFactory HttpClientFactory
+@inject SseListenerService SseListener
+@inject NavigationManager Navigation
+@implements IDisposable
+
+<h3>Today's Menu</h3>
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        @errorMessage
+        <button type="button" class="btn-close" @onclick="() => errorMessage = null"></button>
+    </div>
+}
+
+@if (menuItems == null)
+{
+    <p><em>Loading today's menu...</em></p>
+}
+else if (menuItems.Length == 0)
+{
+    <div class="alert alert-info">No menu available for today.</div>
+}
+else
+{
+    <div class="row row-cols-1 row-cols-md-3 g-4">
+        @foreach (var item in menuItems)
+        {
+            <div class="col">
+                <div class="card h-100 @(item.AvailablePortions <= 0 ? "border-danger opacity-75" : "border-primary")">
+                    <div class="card-body">
+                        <h5 class="card-title">@item.DishName</h5>
+                        <p class="card-text text-muted">@item.DishPrice.ToString("C")</p>
+                        
+                        <div class="d-flex justify-content-between align-items-center mt-3">
+                            <div>
+                                @if (item.AvailablePortions > 0)
+                                {
+                                    <span class="badge bg-success">@item.AvailablePortions portions left</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-danger">Sold Out</span>
+                                }
+                            </div>
+                            <button class="btn btn-primary" 
+                                    disabled="@(item.AvailablePortions <= 0)"
+                                    @onclick="() => PlaceOrder(item.Id)">
+                                Order Now
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private MenuItemDto[]? menuItems;
+    private string? errorMessage;
+    private HttpClient _client = default!;
+    private string _studentId = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _client = HttpClientFactory.CreateClient("webapi");
+        // Generate anonymous student ID for this session (student does not log in)
+        _studentId = $"student-{Guid.NewGuid():N}"[..16];
+        await LoadMenu();
+        
+        SseListener.OnEventReceived += HandleSseEvent;
+    }
+
+    private async Task LoadMenu()
+    {
+        var dateString = DateTime.UtcNow.ToString("yyyy-MM-dd");
+        menuItems = await _client.GetFromJsonAsync<MenuItemDto[]>($"/menu-items/by-date/{dateString}");
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task PlaceOrder(int menuItemId)
+    {
+        var dto = new CreateOrderDto(menuItemId, _studentId);
+        var response = await _client.PostAsJsonAsync("/orders", dto);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var err = await response.Content.ReadAsStringAsync();
+            errorMessage = $"Failed to place order: {err}";
+        }
+        else
+        {
+            errorMessage = null;
+            Navigation.NavigateTo($"/student/orders?studentId={Uri.EscapeDataString(_studentId)}");
+        }
+    }
+
+    private void HandleSseEvent(string eventType, System.Text.Json.JsonDocument data)
+    {
+        // When an order is created or cancelled, available portions might change.
+        // The simplest approach is to reload the menu.
+        if (eventType == "order-created" || eventType == "order-updated")
+        {
+            _ = InvokeAsync(LoadMenu);
+        }
+    }
+
+    public void Dispose()
+    {
+        SseListener.OnEventReceived -= HandleSseEvent;
+    }
+}

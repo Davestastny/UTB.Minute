@@ -1,0 +1,94 @@
+@page "/menu/edit/{Id:int}"
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Navigation
+
+<h3>Edit Menu Item</h3>
+
+@if (menuModel == null || dishes == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <div class="row">
+        <div class="col-md-6">
+            <EditForm Model="menuModel" OnValidSubmit="HandleValidSubmit">
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+
+                <div class="mb-3">
+                    <label for="dishId" class="form-label">Dish</label>
+                    <InputSelect id="dishId" class="form-select" @bind-Value="menuModel.DishId">
+                        @foreach (var dish in dishes)
+                        {
+                            <option value="@dish.Id">@dish.Name (@dish.Price.ToString("C"))</option>
+                        }
+                    </InputSelect>
+                </div>
+
+                <div class="mb-3">
+                    <label for="menuDate" class="form-label">Date</label>
+                    <InputDate id="menuDate" class="form-control" @bind-Value="menuModel.MenuDate" />
+                </div>
+
+                <div class="mb-3">
+                    <label for="portions" class="form-label">Available Portions</label>
+                    <InputNumber id="portions" class="form-control" @bind-Value="menuModel.AvailablePortions" />
+                </div>
+
+                <button type="submit" class="btn btn-primary">Save Changes</button>
+                <a href="/menu" class="btn btn-secondary">Cancel</a>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private EditMenuModel? menuModel;
+    private DishDto[]? dishes;
+    private HttpClient _client = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _client = HttpClientFactory.CreateClient("webapi");
+        
+        // Load dishes for dropdown
+        dishes = await _client.GetFromJsonAsync<DishDto[]>("/dishes");
+        
+        // Load the menu item to edit
+        var item = await _client.GetFromJsonAsync<MenuItemDto>($"/menu-items/{Id}");
+        
+        if (item != null)
+        {
+            menuModel = new EditMenuModel
+            {
+                DishId = item.DishId,
+                MenuDate = item.MenuDate,
+                AvailablePortions = item.AvailablePortions
+            };
+        }
+    }
+
+    private async Task HandleValidSubmit()
+    {
+        if (menuModel == null) return;
+
+        var dto = new UpdateMenuItemDto(menuModel.DishId, menuModel.MenuDate, menuModel.AvailablePortions);
+        var response = await _client.PutAsJsonAsync($"/menu-items/{Id}", dto);
+
+        if (response.IsSuccessStatusCode)
+        {
+            Navigation.NavigateTo("/menu");
+        }
+    }
+
+    public class EditMenuModel
+    {
+        public int DishId { get; set; }
+        public DateTime MenuDate { get; set; }
+        public int AvailablePortions { get; set; }
+    }
+}
