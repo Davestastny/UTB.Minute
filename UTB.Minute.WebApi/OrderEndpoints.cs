@@ -21,6 +21,7 @@ public static class OrderEndpoints
         var group = app.MapGroup("/orders").WithTags("Orders");
 
         group.MapGet("/", GetActiveOrders).RequireAuthorization("AdminOrCook");
+        group.MapGet("/student/{studentId}", GetActiveOrdersByStudent);             // public — student gets their active orders
         group.MapGet("/{id:int}", GetOrderById);                                    // public — student tracks their order
         group.MapPost("/", CreateOrder);                                             // public — student does not log in
         group.MapPatch("/{id:int}/status", UpdateOrderStatus).RequireAuthorization("AdminOrCook");
@@ -30,6 +31,21 @@ public static class OrderEndpoints
     {
         var orders = await db.Orders
             .Where(o => o.Status != OrderStatus.Completed)
+            .Select(o => new OrderDto(
+                o.Id,
+                o.MenuItemId,
+                o.StudentId,
+                (int)o.Status,
+                o.OrderedAt))
+            .ToListAsync();
+
+        return TypedResults.Ok(orders);
+    }
+
+    private static async Task<IResult> GetActiveOrdersByStudent(string studentId, MinuteDbContext db)
+    {
+        var orders = await db.Orders
+            .Where(o => o.StudentId == studentId && o.Status != OrderStatus.Completed)
             .Select(o => new OrderDto(
                 o.Id,
                 o.MenuItemId,

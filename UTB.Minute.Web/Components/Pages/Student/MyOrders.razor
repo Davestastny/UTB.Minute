@@ -64,8 +64,8 @@ else
 
     private async Task LoadData()
     {
-        // Load active orders
-        var allOrders = await _client.GetFromJsonAsync<OrderDto[]>("/orders");
+        // Load active orders for this student
+        var allOrders = await _client.GetFromJsonAsync<OrderDto[]>($"/orders/student/{studentId}");
         if (allOrders != null)
         {
             orders = allOrders.ToList();

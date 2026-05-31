@@ -1,18 +1,20 @@
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using UTB.Minute.Contracts;
 
 namespace UTB.Minute.Web.Services;
 
 public class SseListenerService : BackgroundService
 {
-    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly ILogger<SseListenerService> _logger;
 
     public event Action<string, JsonDocument>? OnEventReceived;
 
-    public SseListenerService(IHttpClientFactory httpClientFactory, ILogger<SseListenerService> logger)
+    public SseListenerService(IServiceScopeFactory serviceScopeFactory, ILogger<SseListenerService> logger)
     {
-        _httpClientFactory = httpClientFactory;
+        _serviceScopeFactory = serviceScopeFactory;
         _logger = logger;
     }
 
@@ -22,7 +24,9 @@ public class SseListenerService : BackgroundService
         {
             try
             {
-                using var client = _httpClientFactory.CreateClient("webapi");
+                using var scope = _serviceScopeFactory.CreateScope();
+                var httpClientFactory = scope.ServiceProvider.GetRequiredService<IHttpClientFactory>();
+                using var client = httpClientFactory.CreateClient("webapi");
                 using var response = await client.GetAsync("/sse", HttpCompletionOption.ResponseHeadersRead, stoppingToken);
                 response.EnsureSuccessStatusCode();
 

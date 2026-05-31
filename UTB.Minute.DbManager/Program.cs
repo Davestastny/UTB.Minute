@@ -10,14 +10,35 @@ var app = builder.Build();
 
 app.MapDefaultEndpoints();
 
-app.MapPost("/dev/seed", async (MinuteDbContext db) =>
+app.MapPost("/dev/seed", async Task<IResult> (MinuteDbContext db) =>
 {
-    await db.Database.EnsureDeletedAsync();
-    await db.Database.EnsureCreatedAsync();
+    try
+    {
+        // Clear all connection pools in this process
+        Npgsql.NpgsqlConnection.ClearAllPools();
 
-    await SeedData(db);
+        // Safely terminate all other connections on the PostgreSQL server before dropping the database
+        if (await db.Database.CanConnectAsync())
+        {
+            await db.Database.ExecuteSqlRawAsync(@"
+                SELECT pg_terminate_backend(pg_stat_activity.pid)
+                FROM pg_stat_activity
+                WHERE pg_stat_activity.datname = 'minutedb'
+                  AND pg_stat_activity.pid <> pg_backend_pid();");
+        }
 
-    return TypedResults.Ok("Database reset and seeded successfully.");
+        await db.Database.EnsureDeletedAsync();
+        await db.Database.EnsureCreatedAsync();
+
+        await SeedData(db);
+
+        return TypedResults.Ok("Database reset and seeded successfully.");
+    }
+    catch (System.Exception ex)
+    {
+        System.Console.WriteLine($"[RESET-DB ERROR] {ex}");
+        return TypedResults.Problem($"Failed to reset database: {ex.Message}");
+    }
 });
 
 // Automatically ensure database is created and seeded on startup

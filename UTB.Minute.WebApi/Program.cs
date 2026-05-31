@@ -26,32 +26,85 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
         options.Events = new JwtBearerEvents
         {
-            OnMessageReceived = context =>
-            {
-                var authHeader = context.Request.Headers["Authorization"].ToString();
-                var msg = $"[JWT RECEIVED] {System.DateTime.UtcNow}: Path: {context.Request.Path} | Has Auth Header: {!string.IsNullOrEmpty(authHeader)} | Length: {authHeader?.Length ?? 0}";
-                System.IO.File.AppendAllText("e:\\programko\\AF\\UTB.Minute-main\\webapi_auth_errors.log", msg + System.Environment.NewLine);
-                return Task.CompletedTask;
-            },
             OnTokenValidated = context =>
             {
-                var msg = $"[JWT VALIDATED] {System.DateTime.UtcNow}: User: {context.Principal?.Identity?.Name} | Has Roles Claim: {context.Principal?.HasClaim(c => c.Type == "roles")}";
-                System.IO.File.AppendAllText("e:\\programko\\AF\\UTB.Minute-main\\webapi_auth_errors.log", msg + System.Environment.NewLine);
+                if (context.Principal?.Identity is System.Security.Claims.ClaimsIdentity identity)
+                {
+                    // Extract and map roles from Keycloak's standard "realm_access" claim
+                    var realmAccessClaim = identity.FindFirst("realm_access");
+                    if (realmAccessClaim != null)
+                    {
+                        try
+                        {
+                            using var doc = System.Text.Json.JsonDocument.Parse(realmAccessClaim.Value);
+                            if (doc.RootElement.TryGetProperty("roles", out var rolesElem) && rolesElem.ValueKind == System.Text.Json.JsonValueKind.Array)
+                            {
+                                foreach (var roleElem in rolesElem.EnumerateArray())
+                                {
+                                    var r = roleElem.GetString();
+                                    if (!string.IsNullOrEmpty(r))
+                                    {
+                                        // Map to the default XML Role claim type
+                                        if (!identity.HasClaim(c => c.Type == System.Security.Claims.ClaimTypes.Role && c.Value == r))
+                                        {
+                                            identity.AddClaim(new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, r));
+                                        }
+                                        // Also map to the custom "roles" claim type configured in WebApi
+                                        if (!identity.HasClaim(c => c.Type == "roles" && c.Value == r))
+                                        {
+                                            identity.AddClaim(new System.Security.Claims.Claim("roles", r));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        catch (System.Exception ex)
+                        {
+                            System.Console.WriteLine($"[JWT Role Mapping Error]: {ex.Message}");
+                        }
+                    }
+
+                    // Also support standard "roles" claim if it's already a string or string array in the token
+                    var roleClaims = identity.FindAll("roles").ToList();
+                    foreach (var claim in roleClaims)
+                    {
+                        var val = claim.Value.Trim();
+                        if (val.StartsWith("[") && val.EndsWith("]"))
+                        {
+                            try
+                            {
+                                var roles = System.Text.Json.JsonSerializer.Deserialize<string[]>(val);
+                                if (roles != null)
+                                {
+                                    foreach (var role in roles)
+                                    {
+                                        if (!identity.HasClaim(c => c.Type == System.Security.Claims.ClaimTypes.Role && c.Value == role))
+                                        {
+                                            identity.AddClaim(new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, role));
+                                        }
+                                        if (!identity.HasClaim(c => c.Type == "roles" && c.Value == role))
+                                        {
+                                            identity.AddClaim(new System.Security.Claims.Claim("roles", role));
+                                        }
+                                    }
+                                }
+                            }
+                            catch { }
+                        }
+                        else
+                        {
+                            if (!identity.HasClaim(c => c.Type == System.Security.Claims.ClaimTypes.Role && c.Value == val))
+                            {
+                                identity.AddClaim(new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, val));
+                            }
+                        }
+                    }
+                }
                 return Task.CompletedTask;
             },
             OnAuthenticationFailed = context =>
             {
-                var authHeader = context.Request.Headers["Authorization"].ToString();
-                var token = authHeader.StartsWith("Bearer ", System.StringComparison.OrdinalIgnoreCase)
-                    ? authHeader.Substring(7)
-                    : authHeader;
-                var errorMsg = $"[JWT FAILED] {System.DateTime.UtcNow}: {context.Exception.Message} | Token: {token}";
-                if (context.Exception.InnerException != null)
-                {
-                    errorMsg += $" | Inner: {context.Exception.InnerException.Message}";
-                }
-                System.IO.File.AppendAllText("e:\\programko\\AF\\UTB.Minute-main\\webapi_auth_errors.log", errorMsg + System.Environment.NewLine);
-                System.Console.WriteLine(errorMsg);
+                System.Console.WriteLine($"[JWT AUTHENTICATION FAILED] Path: {context.Request.Path} | Error: {context.Exception.Message}");
                 return Task.CompletedTask;
             }
         };
